@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
+import 'package:uuid/uuid.dart'; // Import uuid package
 import 'dart:convert';
 
 void main() {
@@ -32,26 +33,38 @@ class MyHomePage extends StatefulWidget {
 
 class _MyHomePageState extends State<MyHomePage> {
   String _response = 'Press the button to call the API.';
+  final Uuid _uuid = const Uuid(); // Initialize Uuid
 
   Future<void> _callApi() async {
+    setState(() {
+      _response = 'Calling API...';
+    });
+
+    final String globalId = _uuid.v4(); // Generate globalId
+
     try {
       // For Android emulators, use 10.0.2.2 to refer to the host machine's localhost.
       // For iOS simulators, you can use localhost or 127.0.0.1.
       // If you are running on a physical device, replace localhost with your computer's IP address.
-      final response = await http.get(Uri.parse('http://127.0.0.1:8080/api/hello'));
+      final response = await http.get(
+        Uri.parse('http://127.0.0.1:8080/api/hello'),
+        headers: {
+          'X-Global-ID': globalId, // Add globalId to header
+        },
+      );
 
       if (response.statusCode == 200) {
         setState(() {
-          _response = response.body;
+          _response = 'Response: ${response.body}\nGlobal ID: $globalId';
         });
       } else {
         setState(() {
-          _response = 'Error: ${response.statusCode}';
+          _response = 'Error: ${response.statusCode}\nGlobal ID: $globalId';
         });
       }
     } catch (e) {
       setState(() {
-        _response = 'Error: $e';
+        _response = 'Error: $e\nGlobal ID: $globalId';
       });
     }
   }
@@ -68,6 +81,7 @@ class _MyHomePageState extends State<MyHomePage> {
           children: <Widget>[
             Text(
               _response,
+              textAlign: TextAlign.center, // Center align text
             ),
           ],
         ),
