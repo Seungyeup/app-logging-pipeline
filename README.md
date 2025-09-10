@@ -76,6 +76,51 @@ Flutter 앱에서 `globalId`를 생성하고, 이를 서버로 보내는 API 요
 3.  **Flutter 앱 UI에서 `globalId`가 표시되는지 확인합니다.**
 4.  **Spring Boot 서버의 콘솔 로그를 확인합니다:** `/api/hello` 호출에 대한 로그 라인에 Flutter 앱 UI에 표시된 것과 **동일한** `globalId`가 포함되어야 합니다.
 
+## 3단계: 트레이스 (Traces) - OpenTelemetry, OTel Collector, Tempo 연동
+
+이 단계에서는 분산 트레이싱을 시스템에 통합하여, 요청의 End-to-End 흐름을 시각화하고 성능 병목 현상을 식별할 수 있도록 합니다.
+
+### 3.1 개념 설명
+
+*   **분산 트레이싱 (Distributed Tracing):** 여러 서비스에 걸쳐 있는 단일 요청의 전체 여정을 추적하여 각 서비스의 소요 시간을 파악하고 병목 현상을 식별하는 기술입니다.
+*   **OpenTelemetry (OTel):** 벤더에 구애받지 않는 오픈소스 관측 가능성(Observability) 프레임워크로, 트레이스, 메트릭, 로그와 같은 텔레메트리 데이터를 수집하는 표준화된 방법을 제공합니다.
+*   **스팬 (Span):** 트레이스의 기본 구성 요소로, 트레이스 내의 단일 작업(예: HTTP 요청, DB 쿼리)을 나타냅니다.
+*   **OTel Collector:** 텔레메트리 데이터를 수신, 처리 및 내보내는 프록시입니다. 애플리케이션과 관측 가능성 백엔드를 분리하는 데 사용됩니다.
+*   **Tempo:** Grafana Labs의 오픈소스, 대용량 분산 트레이싱 백엔드로, 트레이스를 저장하고 Grafana와 연동하여 시각화하는 데 사용됩니다.
+
+### 3.2 Docker Compose 설정 업데이트
+
+OpenTelemetry Collector와 Tempo를 Docker Compose 설정에 추가하여 트레이스를 수신하고 저장할 수 있는 백엔드를 구성했습니다.
+
+*   **위치:** `spring-boot-server/docker-compose.yml`
+*   **추가된 서비스:**
+    *   `otel-collector`: 애플리케이션으로부터 OTLP 트레이스를 수신하여 Tempo로 전달합니다.
+    *   `tempo`: 트레이스를 저장하는 고용량 분산 트레이싱 백엔드입니다.
+*   **구성 파일:**
+    *   `spring-boot-server/otel-collector-config.yaml`: OTel Collector의 수신기(OTLP gRPC/HTTP) 및 익스포터(로깅, Tempo)를 구성합니다.
+    *   `spring-boot-server/tempo-config.yaml`: Tempo의 로컬 저장소를 구성합니다.
+
+### 3.3 Spring Boot 애플리케이션 계측 (Instrumentation)
+
+Spring Boot 애플리케이션이 트레이스를 생성하고 OTel Collector로 전송하도록 설정했습니다.
+
+*   **의존성 추가:** `spring-boot-server/build.gradle`에 `spring-boot-starter-actuator`, `micrometer-tracing-bridge-otel`, `opentelemetry-exporter-otlp`, `spring-boot-starter-aop`를 추가했습니다.
+*   **`application.yaml` 설정:** `spring-boot-server/src/main/resources/application.yaml`에 트레이싱 샘플링, OTLP 엔드포인트(`http://localhost:4318/v1/traces`), 그리고 모든 Actuator 엔드포인트 노출 설정을 추가했습니다.
+
+### 3.4 `globalId` 자동 태깅 (Spring AOP)
+
+모든 관련 요청에 대해 MDC의 `globalId`를 스팬 속성으로 자동으로 포함시키기 위해 Spring AOP를 활용했습니다.
+
+*   **위치:** `spring-boot-server/src/main/java/com/example/demo/aspect/TracingAspect.java`
+*   **역할:** `@RestController`로 어노테이션된 메서드를 가로채어 MDC에서 `globalId`를 가져와 현재 OpenTelemetry 스팬에 태그(`globalId`)로 추가합니다. 이를 통해 각 컨트롤러 메서드에 수동으로 스팬 태깅을 할 필요가 없어집니다.
+
+### 3.5 검증
+
+1.  **Docker Compose 서비스 실행 확인:** `spring-boot-server` 디렉토리에서 `docker-compose down` 후 `docker-compose up -d`를 실행하여 최신 구성으로 컨테이너가 실행 중인지 확인합니다.
+2.  **Spring Boot 애플리케이션 재시작.**
+3.  **`X-Global-ID` 헤더를 포함하여 `/api/hello` 엔드포인트로 요청을 보냅니다.**
+4.  **`otel-collector` 로그 확인:** `docker-compose logs otel-collector`를 실행하여 수신 및 내보낸 트레이스 메시지를 확인하고, 트레이스 세부 정보 내에 `globalId`가 속성으로 포함되어 있는지 확인합니다.
+
 ## 디버깅 이력
 
 이 프로젝트 진행 중 발생했던 디버깅 이력 및 해결 과정은 각 서브 프로젝트의 `README.md` 파일을 참조해주세요.

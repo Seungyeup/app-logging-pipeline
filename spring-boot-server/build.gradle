@@ -18,11 +18,27 @@ repositories {
 	mavenCentral()
 }
 
+// No need for opentelemetry-bom here, Micrometer Tracing manages its own OTel dependencies
+// dependencyManagement {
+//     imports {
+//         mavenBom("io.opentelemetry:opentelemetry-bom:1.37.0")
+//     }
+// }
+
 dependencies {
-	    implementation 'org.springframework.boot:spring-boot-starter-web'
-    implementation 'org.springframework.boot:spring-boot-starter-data-jpa' // Added
-    runtimeOnly 'org.postgresql:postgresql' // Added
-	testImplementation 'org.springframework.boot:spring-boot-starter-test'
+    implementation 'org.springframework.boot:spring-boot-starter-web'
+    implementation 'org.springframework.boot:spring-boot-starter-data-jpa'
+    runtimeOnly 'org.postgresql:postgresql'
+
+    // Spring Boot Actuator for observability features (required for tracing management)
+    implementation 'org.springframework.boot:spring-boot-starter-actuator'
+
+    // Micrometer Tracing with OpenTelemetry bridge
+    implementation 'io.micrometer:micrometer-tracing-bridge-otel'
+    implementation 'io.opentelemetry:opentelemetry-exporter-otlp'
+
+    // Spring AOP for cross-cutting concerns
+    implementation 'org.springframework.boot:spring-boot-starter-aop' // Added
 	testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
 }
 

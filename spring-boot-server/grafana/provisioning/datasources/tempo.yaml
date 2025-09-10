@@ -1,0 +1,20 @@
+apiVersion: 1
+
+datasources:
+  - name: Tempo
+    type: tempo
+    uid: tempo
+    access: proxy
+    url: http://tempo:3200 # Tempo service name within Docker network
+    basicAuth: false
+    isDefault: true
+    version: 1
+    editable: true
+    jsonData:
+      httpMethod: GET
+      serviceMap:
+        datasourceUid: grafana # Placeholder, will be updated if Prometheus is added
+      nodeGraph:
+        enabled: true
+      lokiSearch:
+        datasourceUid: grafana # Placeholder, will be updated if Loki is added
