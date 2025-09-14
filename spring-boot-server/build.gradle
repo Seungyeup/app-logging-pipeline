@@ -9,21 +9,14 @@ version = '0.0.1-SNAPSHOT'
 description = 'Demo project for Spring Boot'
 
 java {
-	toolchain {
-		languageVersion = JavaLanguageVersion.of(17)
-	}
+    toolchain {
+        languageVersion = JavaLanguageVersion.of(21)
+    }
 }
 
 repositories {
 	mavenCentral()
 }
-
-// No need for opentelemetry-bom here, Micrometer Tracing manages its own OTel dependencies
-// dependencyManagement {
-//     imports {
-//         mavenBom("io.opentelemetry:opentelemetry-bom:1.37.0")
-//     }
-// }
 
 dependencies {
     implementation 'org.springframework.boot:spring-boot-starter-web'
@@ -37,8 +30,13 @@ dependencies {
     implementation 'io.micrometer:micrometer-tracing-bridge-otel'
     implementation 'io.opentelemetry:opentelemetry-exporter-otlp'
 
-    // Spring AOP for cross-cutting concerns
-    implementation 'org.springframework.boot:spring-boot-starter-aop' // Added
+    // AOP starter for @NewSpan annotation support -> NewSpan 더이상 사용안함
+    implementation 'org.springframework.boot:spring-boot-starter-aop'
+
+    // JDBC 관측
+    implementation "net.ttddyy.observation:datasource-micrometer-spring-boot:1.1.2"
+
+    testImplementation 'org.springframework.boot:spring-boot-starter-test'
 	testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
 }
 

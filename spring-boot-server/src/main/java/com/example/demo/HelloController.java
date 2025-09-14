@@ -1,7 +1,7 @@
 package com.example.demo;
 
 import com.example.demo.entity.LogEntry;
-import com.example.demo.repository.LogEntryRepository;
+import com.example.demo.service.LogSaveService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.slf4j.MDC;
@@ -17,7 +17,7 @@ public class HelloController {
     private static final Logger log = LoggerFactory.getLogger(HelloController.class);
 
     @Autowired
-    private LogEntryRepository logEntryRepository;
+    private LogSaveService logSaveService;
 
     @GetMapping("/api/hello")
     public String hello() {
@@ -36,7 +36,7 @@ public class HelloController {
                 LocalDateTime.now(),
                 "INFO"
         );
-        logEntryRepository.save(logEntry);
+        logSaveService.saveLog(logEntry);
         log.info("LogEntry saved to DB with globalId: {}", globalId);
 
         return "Hello from Spring Boot!";

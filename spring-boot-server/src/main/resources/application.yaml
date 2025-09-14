@@ -16,6 +16,9 @@ logging:
     console: "%d{yyyy-MM-dd HH:mm:ss.SSS} [%thread] [%X{globalId}] %-5level %logger{36} - %msg%n"
 
 management:
+  observations:
+    annotations:
+      enabled: true # Spring Boot 3.5에서는 관찰 애노테이션 스캐닝이 기본 비활성화
   tracing:
     sampling:
       probability: 1.0
