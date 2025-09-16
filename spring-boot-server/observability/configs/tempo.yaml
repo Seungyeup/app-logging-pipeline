@@ -40,6 +40,12 @@ metrics_generator:
   traces_storage:
     path: /var/tempo/generator/traces
 
+  processor:
+    service_graphs:  # 사용자 정의 GlobalID 추가함
+      dimensions: [globalId]
+    span_metrics:
+      dimensions: [globalId]
+
 storage:
   trace:
     backend: local # backend configuration to use

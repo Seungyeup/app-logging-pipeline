@@ -26,6 +26,9 @@ management:
       correlation:
         enabled: true
         fields: globalId # The MDC key
+      remote-fields: globalId
+      local-fields: globalId
+      tag-fields: globalId
   otlp:
     tracing:
       endpoint: http://localhost:4318/v1/traces

@@ -1,6 +1,33 @@
 # End-to-End 로깅 시스템 구축 프로젝트
 
-이 프로젝트는 Flutter 클라이언트 앱부터 Spring Boot 서버까지의 전체 트랜잭션 흐름을 `globalId`를 통해 추적할 수 있는 End-to-End 로깅 시스템을 구축하는 것을 목표로 합니다.
+이 프로젝트는 Flutter 클라이언트 앱부터 Spring Boot 서버까지의 전체 트랜잭션 흐름을 `globalId`를 통해 추적할 수 있는 End-to-End 로깅/트레이싱 시스템을 구축하는 것을 목표로 합니다.
+
+## 최신 구성 요약 (E2E Tracing)
+- 버전: Spring Boot 3.5.5 / Java 21 / Flutter 3.35.3
+- 요청 흐름: Flutter가 `X-Global-ID`를 생성·전송 → Spring의 `MdcLoggingFilter`가 MDC와 Tracing Baggage(`globalId`)에 주입 → `management.tracing.baggage.tag-fields: globalId`로 모든 스팬에 자동 태깅 → OTel Collector → Tempo
+- 공통 태깅: `spring-boot-server/src/main/java/com/example/demo/config/ObservabilityConfig.java`와 Baggage 설정으로 HTTP/서비스/DB 모든 스팬에 `globalId` 속성 부여
+- Collector 파이프라인: `observability/configs/otel-collector-config.yaml`
+  - traces: `otlp` → `transform/db-peer`(DB 원격 식별 정규화) → `batch` → `otlp/tempo, debug, spanmetrics, servicegraph`
+  - metrics: `spanmetrics, servicegraph` → `prometheus(8889)`
+  - 정규화 규칙: `db.name`/`db.system`을 `peer.service`로 매핑, `connection` 스팬은 미지정 시 `mydatabase`로 귀속 → Service graph의 `unknown` 제거
+- Prometheus 스크레이프: `observability/configs/prometheus.yaml`에 `otel-collector:8889` 추가
+- Tempo: `globalId`를 검색 속성으로 등록(TraceQL Builder의 Attributes에서 선택 가능)
+- Grafana 조회 팁(TraceQL):
+  - `{ service.name = "spring-boot-server" } | { globalId = "<값>" }`  ← 값은 큰따옴표 필수
+  - 워터폴 예: `http get /api/hello` → `save-log-to-db` → `connection` → `mydatabase query / generated-keys`
+
+### 실행/검증 빠른 가이드
+```bash
+# 관측 스택 재시작 (from spring-boot-server/)
+docker compose down && docker compose up -d
+
+# 서버 실행
+./gradlew bootRun
+
+# 트레이스 생성
+curl -H 'X-Global-ID: demo-123' http://localhost:8080/api/hello
+```
+Grafana(Tempo)에서 위 TraceQL로 필터링하면 모든 스팬의 Attributes에 `globalId`가 보이고, Service graph는 `user → spring-boot-server → mydatabase`로 표시됩니다.
 
 ## 1단계: Spring Boot 서버 MDC (Mapped Diagnostic Context) 설정
 

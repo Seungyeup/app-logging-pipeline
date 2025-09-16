@@ -7,28 +7,40 @@ receivers:
         endpoint: 0.0.0.0:4318
 
 processors:
+  # Enrich spans so servicegraph can attribute remote service correctly
+#  - query: 실제 SQL 실행 스팬. INSERT/SELECT 같은 쿼리 수행.
+#  - generated-keys: INSERT 후 자동 생성 키를 조회하는 별도 JDBC 호출.
+#  - connection: 커넥션 풀에서 DB 커넥션 획득/사용/반납을 나타내는 스팬. 종종 db.name/net.peer.name이 비어 있어 service graph가 목적지를 추정 못하면 unknown으로 떨어짐.
+  transform/db-peer:
+    error_mode: ignore
+    trace_statements:
+      - context: span
+        statements:
+          - set(attributes["peer.service"], attributes["db.name"]) where attributes["db.name"] != nil and attributes["peer.service"] == nil
+          - set(attributes["peer.service"], attributes["db.system"]) where attributes["db.system"] != nil and attributes["peer.service"] == nil
+          - set(attributes["peer.service"], "mydatabase") where name == "connection" and attributes["peer.service"] == nil
   batch:
 
 exporters:
   otlp/tempo:
-    endpoint: tempo:4317 # Tempo's OTLP gRPC endpoint
+    endpoint: tempo:4317
     tls:
       insecure: true
   debug:
-    verbosity: detailed
+    verbosity: normal
+  prometheus:
+    endpoint: 0.0.0.0:8889
 
-# TODO : check extensions
-#extensions:
-#  health_check:
-#    endpoint: 0.0.0.0:13133
-#  pprof:
-#    endpoint: 0.0.0.0:1777
-#  zpages:
-#    endpoint: 0.0.0.0:55679
+connectors:
+  spanmetrics:
+  servicegraph:
 
 service:
   pipelines:
     traces:
       receivers: [otlp]
-      processors: [batch]
-      exporters: [debug, otlp/tempo]
+      processors: [transform/db-peer, batch]
+      exporters: [otlp/tempo, debug, spanmetrics, servicegraph]
+    metrics:
+      receivers: [spanmetrics, servicegraph]
+      exporters: [prometheus]
