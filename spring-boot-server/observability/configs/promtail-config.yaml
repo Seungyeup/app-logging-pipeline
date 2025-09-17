@@ -1,0 +1,34 @@
+server:
+  http_listen_port: 9080
+
+clients:
+  - url: http://loki:3100/loki/api/v1/push
+    tenant_id: fake
+
+positions:
+  filename: /tmp/positions.yaml
+
+scrape_configs:
+  - job_name: spring-boot-logs
+    static_configs:
+      - targets: [localhost]
+        labels:
+          job: spring-boot-server
+          host: dev
+          __path__: /var/log/app/*.log
+    pipeline_stages:
+      - regex:
+          expression: 'trace_id=(?P<trace_id>[A-Fa-f0-9]+) span_id=(?P<span_id>[A-Fa-f0-9]+) globalId=(?P<globalId>[^\]]+)' 
+      - labels:
+          trace_id:
+          span_id:
+          globalId:
+      # output stage 제거: 원본 라인을 유지하고 라벨만 추가합니다.
+
+  # Minimal ingestion job (no parsing) to verify push → Loki
+  - job_name: spring-boot-logs-raw
+    static_configs:
+      - targets: [localhost]
+        labels:
+          job: spring-boot-server-raw
+          __path__: /var/log/app/*.log

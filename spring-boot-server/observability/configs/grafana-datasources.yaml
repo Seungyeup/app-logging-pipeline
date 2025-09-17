@@ -13,6 +13,7 @@ datasources:
     editable: false
     jsonData:
       httpMethod: GET
+
   - name: Tempo
     type: tempo
     access: proxy
@@ -30,3 +31,40 @@ datasources:
         datasourceUid: prometheus
       streamingEnabled:
         search: true
+      lokiSearch:
+        datasourceUid: loki
+      tracesToLogs:
+        datasourceUid: loki
+        filterByTraceID: true
+        filterBySpanID: false
+        spanStartTimeShift: "-1m"
+        spanEndTimeShift: "1m"
+      nodeGraph:
+        enabled: true
+      search:
+        hide: false
+
+  - name: Loki
+    type: loki
+    access: proxy
+    orgId: 1
+    url: http://loki:3100
+    basicAuth: false
+    isDefault: false
+    version: 1
+    editable: false
+    uid: loki
+    jsonData:
+      httpMethod: GET
+      # ▼▼ 기존 + 보강: 로그에서 traceId를 찾아 Tempo로 점프 (Logs → Trace)
+      derivedFields:
+        # 기존 패턴 유지 (trace_id=HEX)
+        - name: TraceID
+          matcherRegex: "trace_id=([A-Fa-f0-9]+)"
+          datasourceUid: tempo
+          url: "$${__value.raw}"
+        # 보강 패턴 1: traceId=HEX (대/소문자 혼용, 길이 16~32 허용)
+        - name: traceId
+          matcherRegex: "(?:traceId|trace_id|trace-id)=([A-Fa-f0-9]{16,32})"
+          datasourceUid: tempo
+          url: "$${__value.raw}"

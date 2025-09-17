@@ -12,8 +12,19 @@ spring:
     show-sql: true
 
 logging:
+  file:
+    name: logs/app.log
   pattern:
-    console: "%d{yyyy-MM-dd HH:mm:ss.SSS} [%thread] [%X{globalId}] %-5level %logger{36} - %msg%n"
+    # Include traceId/spanId/globalId in both console and file logs
+    console: "%d{yyyy-MM-dd HH:mm:ss.SSS} [%thread] [trace_id=%X{traceId} span_id=%X{spanId} globalId=%X{globalId}] %-5level %logger{36} - %msg%n"
+    file: "%d{yyyy-MM-dd HH:mm:ss.SSS} [%thread] [trace_id=%X{traceId} span_id=%X{spanId} globalId=%X{globalId}] %-5level %logger{36} - %msg%n"
+  level:
+    root: INFO
+    com.example.demo: DEBUG
+    org.springframework.web: INFO
+    # Hibernate 6 (Spring Boot 3.x): SQL과 바인딩 값 로깅
+    org.hibernate.SQL: DEBUG
+    org.hibernate.orm.jdbc.bind: TRACE
 
 management:
   observations:

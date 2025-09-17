@@ -98,5 +98,25 @@ services:
     ports:
       - "3000:3000"
 
+  loki:
+    image: grafana/loki:2.9.8
+    command: ["-config.file=/etc/loki/local-config.yaml"]
+    volumes:
+      - ./observability/configs/loki-config.yaml:/etc/loki/local-config.yaml
+      - ./tempo-data:/loki
+    ports:
+      - "3100:3100"
+
+  promtail:
+    image: grafana/promtail:2.9.8
+    command: ["-config.file=/etc/promtail/config.yaml", "-log.level=debug"]
+    volumes:
+      - ./observability/configs/promtail-config.yaml:/etc/promtail/config.yaml
+      - ./logs:/var/log/app
+    ports:
+      - "9080:9080" # promtail http/metrics
+    depends_on:
+      - loki
+
 volumes:
   db_data:
