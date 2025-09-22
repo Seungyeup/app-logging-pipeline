@@ -1,156 +1,168 @@
-# End-to-End 로깅 시스템 구축 프로젝트
+# 앱 로깅 파이프라인 프로젝트
 
-이 프로젝트는 Flutter 클라이언트 앱부터 Spring Boot 서버까지의 전체 트랜잭션 흐름을 `globalId`를 통해 추적할 수 있는 End-to-End 로깅/트레이싱 시스템을 구축하는 것을 목표로 합니다.
+## 1. 프로젝트 개요
 
-## 최신 구성 요약 (E2E Tracing)
-- 버전: Spring Boot 3.5.5 / Java 21 / Flutter 3.35.3
-- 요청 흐름: Flutter가 `X-Global-ID`를 생성·전송 → Spring의 `MdcLoggingFilter`가 MDC와 Tracing Baggage(`globalId`)에 주입 → `management.tracing.baggage.tag-fields: globalId`로 모든 스팬에 자동 태깅 → OTel Collector → Tempo
-- 공통 태깅: `spring-boot-server/src/main/java/com/example/demo/config/ObservabilityConfig.java`와 Baggage 설정으로 HTTP/서비스/DB 모든 스팬에 `globalId` 속성 부여
-- Collector 파이프라인: `observability/configs/otel-collector-config.yaml`
-  - traces: `otlp` → `transform/db-peer`(DB 원격 식별 정규화) → `batch` → `otlp/tempo, debug, spanmetrics, servicegraph`
-  - metrics: `spanmetrics, servicegraph` → `prometheus(8889)`
-  - 정규화 규칙: `db.name`/`db.system`을 `peer.service`로 매핑, `connection` 스팬은 미지정 시 `mydatabase`로 귀속 → Service graph의 `unknown` 제거
-- Prometheus 스크레이프: `observability/configs/prometheus.yaml`에 `otel-collector:8889` 추가
-- Tempo: `globalId`를 검색 속성으로 등록(TraceQL Builder의 Attributes에서 선택 가능)
-- Grafana 조회 팁(TraceQL):
-  - `{ service.name = "spring-boot-server" } | { globalId = "<값>" }`  ← 값은 큰따옴표 필수
-  - 워터폴 예: `http get /api/hello` → `save-log-to-db` → `connection` → `mydatabase query / generated-keys`
+이 프로젝트는 완전한 End-to-End 애플리케이션 로깅 파이프라인을 시연합니다. 사용자의 요청이 시작되는 클라이언트(Flutter)부터, 요청을 처리하는 백엔드(Spring Boot), 그리고 모든 과정을 추적하고 시각화하는 옵저버빌리티 스택(Observability Stack)까지 전체 흐름을 포함합니다.
 
-### 실행/검증 빠른 가이드
-```bash
-# 관측 스택 재시작 (from spring-boot-server/)
-docker compose down && docker compose up -d
+프로젝트의 핵심 목표는, 클라이언트에서 발생한 특정 사용자 행위를 **고유한 ID(Global ID)**를 통해 백엔드와 중앙화된 로깅 시스템까지 일관되게 추적하는 것입니다.
 
-# 서버 실행
-./gradlew bootRun
+### 아키텍처
 
-# 트레이스 생성
-curl -H 'X-Global-ID: demo-123' http://localhost:8080/api/hello
-```
-Grafana(Tempo)에서 위 TraceQL로 필터링하면 모든 스팬의 Attributes에 `globalId`가 보이고, Service graph는 `user → spring-boot-server → mydatabase`로 표시됩니다.
+1.  **Flutter 앱 (클라이언트)**: 사용자가 앱과 상호작용하면, 고유한 `X-Global-ID`를 담아 백엔드로 API를 호출합니다.
+2.  **Spring Boot 서버 (백엔드)**: 요청을 수신하고 헤더에서 `X-Global-ID`를 추출합니다. 이후 해당 요청과 관련된 모든 로그와 분산 트레이스(Distributed Trace)에 이 ID를 포함시켜 전파합니다.
+3.  **옵저버빌리티 스택**: Docker Compose로 관리되는 컨테이너 그룹이 로그, 트레이스, 메트릭을 수집, 저장, 시각화합니다.
+    *   **데이터 수집**: Otel Collector, Loki, Promtail, Tempo, Prometheus가 데이터를 수집하고 처리합니다.
+    *   **데이터 시각화**: Grafana가 수집된 데이터를 통합 대시보드에 표시하며, 사용자는 `globalId`를 검색하여 특정 요청의 전체 흐름을 한눈에 파악할 수 있습니다.
 
-## 1단계: Spring Boot 서버 MDC (Mapped Diagnostic Context) 설정
+---
 
-모든 서버 측 로그에 요청별 `globalId`를 자동으로 포함시켜 클라이언트로부터의 End-to-End 추적을 가능하게 합니다.
+## 2. 로그 및 트레이스 상세 흐름 (End-to-End Tracing Flow)
 
-### 1.1 `MdcLoggingFilter` 생성
+이 프로젝트의 핵심은 `globalId`가 어떻게 클라이언트에서 생성되어 전체 시스템을 거치며 전파되고, 최종적으로 Grafana에서 어떻게 활용되는지를 이해하는 것입니다.
 
-들어오는 요청을 가로채기 위해 `jakarta.servlet.Filter`를 구현한 `MdcLoggingFilter`를 생성했습니다.
+### **1단계: 클라이언트에서 `globalId` 생성 및 전송**
 
-*   **위치:** `spring-boot-server/src/main/java/com/example/demo/filter/MdcLoggingFilter.java`
-*   **역할:**
-    *   HTTP 헤더 `X-Global-ID`에서 `globalId`를 추출합니다.
-    *   헤더가 없으면 새로운 UUID를 `globalId`로 생성합니다.
-    *   이 `globalId`를 `globalId` 키를 사용하여 SLF4J MDC에 넣습니다.
-    *   요청 처리 후 MDC가 올바르게 정리되도록 하여 컨텍스트 누수를 방지합니다.
-*   **등록:** `@Component` 어노테이션 덕분에 Spring Boot에 의해 자동으로 감지되고 등록됩니다. 명시적인 `FilterRegistrationBean`은 필요 없으며, 오히려 충돌을 일으킬 수 있습니다.
+모든 추적은 사용자의 행동에서 시작됩니다.
 
-### 1.2 로깅 패턴 설정 (`application.yaml`)
+1.  **ID 생성**: 사용자가 Flutter 앱의 버튼을 누르면, `uuid` 패키지를 통해 고유한 `globalId`가 생성됩니다.
+    ```dart
+    // flutter_app/lib/main.dart
+    final String globalId = _uuid.v4(); // e.g., "a1b2c3d4-..."
+    ```
 
-`application.yaml`의 로깅 패턴을 업데이트하여 모든 로그 라인에 MDC의 `globalId`가 포함되도록 했습니다.
+2.  **헤더에 주입**: 생성된 `globalId`는 HTTP 요청 헤더 `X-Global-ID`에 담겨 백엔드로 전송됩니다.
+    ```dart
+    // flutter_app/lib/main.dart
+    final response = await http.get(
+      Uri.parse('http://127.0.0.1:8080/api/hello'),
+      headers: {
+        'X-Global-ID': globalId, // 헤더에 Global ID 추가
+      },
+    );
+    ```
 
-*   **위치:** `spring-boot-server/src/main/resources/application.yaml`
-*   **변경:** `logging.pattern.console` 속성에 `[%X{globalId}]`를 추가했습니다.
+> **핵심**: 모든 추적의 시작점인 `globalId`는 클라이언트에서 생성되어 요청의 "꼬리표" 역할을 합니다.
 
+### **2단계: 백엔드에서 `globalId` 수신 및 자동 전파**
+
+Spring Boot 서버는 OpenTelemetry의 "Baggage"라는 기능을 통해 `globalId`를 자동으로 수신하고 시스템 전체에 전파합니다.
+
+1.  **Baggage 설정**: `application.yaml` 파일에 다음과 같이 설정되어 있습니다.
     ```yaml
+    # spring-boot-server/src/main/resources/application.yaml
+    management:
+      tracing:
+        baggage:
+          remote-fields: globalId  # "X-Global-ID" 헤더를 "globalId"라는 이름의 Baggage로 자동 추출
+          correlation:
+            fields: globalId      # Baggage의 "globalId"를 로깅 컨텍스트(MDC)에 복사
+    ```
+    *   `remote-fields`: 외부(remote) 시스템에서 들어오는 요청 헤더(`X-Global-ID`)를 `globalId`라는 이름의 Baggage(컨텍스트 데이터)로 자동 등록합니다.
+    *   `correlation.fields`: 등록된 Baggage `globalId`를 **MDC(Mapped Diagnostic Context)**에 자동으로 복사합니다. MDC는 로그 메시지에 동적인 컨텍스트 정보를 추가할 수 있게 해주는 로깅 프레임워크의 기능입니다.
+
+> **핵심**: 개발자가 컨트롤러에서 헤더를 직접 추출하는 코드를 작성할 필요 없이, 설정만으로 `globalId`가 로깅 시스템과 트레이싱 시스템 양쪽에 자동으로 전파됩니다.
+
+### **3단계: 로그와 트레이스에 ID 자동 주입**
+
+`globalId`가 MDC에 들어간 순간부터, 모든 로그와 트레이스에 ID들이 자동으로 기록됩니다.
+
+1.  **Trace/Span ID 생성**: 요청이 컨트롤러에 도달하면, Micrometer Tracing 라이브러리가 해당 요청에 대한 고유한 `traceId`와 `spanId`를 자동으로 생성하여 MDC에 추가합니다.
+
+2.  **로그 패턴 적용**: `application.yaml`에 설정된 로그 패턴이 MDC의 값들을 참조하여 로그 메시지를 포맷팅합니다.
+    ```yaml
+    # spring-boot-server/src/main/resources/application.yaml
     logging:
       pattern:
-        console: "%d{yyyy-MM-dd HH:mm:ss.SSS} [%thread] [%X{globalId}] %-5level %logger{36} - %msg%n"
+        console: "%d{...} [trace_id=%X{traceId} span_id=%X{spanId} globalId=%X{globalId}] ..."
+    ```
+    *   `%X{traceId}`: MDC에서 `traceId` 값을 가져와 로그에 포함시킵니다.
+    *   `%X{spanId}`: MDC에서 `spanId` 값을 가져와 로그에 포함시킵니다.
+    *   `%X{globalId}`: MDC에서 `globalId` 값을 가져와 로그에 포함시킵니다.
+
+3.  **로그 출력**: 이제 컨트롤러에서 `log.info("...")`와 같은 코드를 실행하면, 최종 로그 파일(`logs/app.log`)에는 다음과 같이 세 가지 ID가 모두 포함된 로그가 남게 됩니다.
+    ```
+    2024-09-23 14:30:00.123 [http-nio-8080-exec-1] [trace_id=abc... span_id=def... globalId=a1b2c3d4-...] INFO com.example.demo.HelloController - Hello API called.
     ```
 
-### 1.3 검증
+### **4단계: 옵저버빌리티 스택에서의 수집 및 시각화**
 
-1.  **Spring Boot 서버를 재시작합니다.**
-2.  **`X-Global-ID` 헤더를 포함하여 요청을 보냅니다:**
-    ```bash
-    curl --location --request GET 'http://localhost:8080/api/hello' \
-    --header 'X-Global-ID: test-12345'
-    ```
-3.  **서버 콘솔 로그를 확인합니다:** `HelloController`의 로그 출력에 `globalId`가 포함되어야 합니다.
-    예시: `2025-09-10 08:40:10.766 [http-nio-8080-exec-2] [test-12345] INFO com.example.demo.HelloController - Hello API called.`
-4.  **`X-Global-ID` 헤더 없이 요청을 보냅니다:**
-    ```bash
-    curl --location --request GET 'http://localhost:8080/api/hello'
-    ```
-5.  **서버 콘솔 로그를 확인합니다:** 새로운 UUID가 생성되어 로그에 나타나야 합니다.
+이렇게 생성된 데이터는 각각의 파이프라인을 통해 Grafana로 모입니다.
 
-## 2단계: Flutter 앱 `globalId` 생성 및 API 호출에 포함
+1.  **로그 수집 (Promtail → Loki)**
+    *   `Promtail`이 `logs/app.log` 파일의 변경 사항을 감지합니다.
+    *   새로운 로그 라인을 `Loki`로 전송하여 저장합니다.
 
-Flutter 앱에서 `globalId`를 생성하고, 이를 서버로 보내는 API 요청 헤더에 포함시킵니다.
+2.  **트레이스 수집 (Spring Boot → Otel Collector → Tempo)**
+    *   Spring Boot 앱은 `application.yaml`의 `management.otlp.tracing.endpoint` 설정에 따라 모든 트레이스 데이터를 `Otel Collector`로 보냅니다.
+    *   `Otel Collector`는 이 데이터를 받아 `Tempo`로 전달하여 저장합니다.
 
-### 2.1 `uuid` 패키지 추가
+3.  **Grafana에서 데이터 통합 및 시각화**
+    *   Grafana에는 Loki(로그용)와 Tempo(트레이스용) 데이터 소스가 미리 연동되어 있습니다.
+    *   **사용자 시나리오**:
+        1.  Flutter 앱에서 버튼을 누르고 표시된 `globalId`를 복사합니다.
+        2.  Grafana 대시보드(`http://localhost:3000`)의 **Explore** 탭으로 이동합니다.
+        3.  데이터 소스를 **Loki**로 선택합니다.
+        4.  LogQL 쿼리 입력창에 `{job="spring-boot-app"} |= "복사한_globalId"`를 입력하고 실행합니다.
+        5.  해당 `globalId`를 포함하는 모든 로그가 화면에 나타납니다.
+        6.  로그 라인 내부를 보면 `trace_id`가 포함되어 있는데, Grafana는 이를 자동으로 감지하여 **Tempo로 바로 이동할 수 있는 버튼**을 제공합니다.
+        7.  이 버튼을 클릭하면, 해당 `trace_id`를 가진 요청의 전체 호출 흐름(Flame Graph)이 Tempo 화면에 시각화됩니다.
 
-`globalId` 생성을 위해 `uuid` 패키지를 Flutter 프로젝트에 추가했습니다.
+> **최종 결과**: 사용자는 `globalId` 하나만으로 특정 요청과 관련된 모든 로그를 필터링하고, 그 로그에서 단 한 번의 클릭으로 해당 요청의 전체 분산 트레이스 정보까지 완벽하게 넘나들며 분석할 수 있게 됩니다.
 
-*   **위치:** `flutter_app/pubspec.yaml`
-*   **변경:** `dependencies` 섹션에 `uuid: ^4.4.0`을 추가했습니다.
+---
 
-### 2.2 `main.dart` 수정
+## 3. 프로젝트 실행 방법
 
-`_callApi` 함수를 수정하여 `globalId`를 생성하고 API 요청 헤더에 포함시켰습니다.
+전체 시스템을 실행하려면 옵저버빌리티 스택, 백엔드 서버, 클라이언트 앱을 순서대로 시작해야 합니다.
 
-*   **위치:** `flutter_app/lib/main.dart`
-*   **변경:**
-    *   `uuid` 패키지를 임포트했습니다.
-    *   `Uuid().v4()`를 사용하여 `globalId`를 생성했습니다.
-    *   HTTP 요청의 `headers`에 `X-Global-ID` 키로 생성된 `globalId`를 추가했습니다.
-    *   API 응답과 함께 `globalId`를 UI에 표시하도록 업데이트했습니다.
+### **1단계: 옵저버빌리티 스택 시작**
 
-### 2.3 검증
+Docker Compose를 사용하여 Grafana, Loki, Tempo 등 모든 모니터링 도구를 한 번에 실행합니다.
 
-1.  **Flutter 앱을 재시작합니다.** (새로운 의존성을 위해 전체 재시작 권장)
-2.  **Flutter 앱에서 "Call API" 버튼을 클릭합니다.**
-3.  **Flutter 앱 UI에서 `globalId`가 표시되는지 확인합니다.**
-4.  **Spring Boot 서버의 콘솔 로그를 확인합니다:** `/api/hello` 호출에 대한 로그 라인에 Flutter 앱 UI에 표시된 것과 **동일한** `globalId`가 포함되어야 합니다.
+```bash
+# spring-boot-server 디렉터리로 이동
+cd spring-boot-server
 
-## 3단계: 트레이스 (Traces) - OpenTelemetry, OTel Collector, Tempo 연동
+# 모든 서비스를 백그라운드에서 시작
+docker-compose up -d
+```
 
-이 단계에서는 분산 트레이싱을 시스템에 통합하여, 요청의 End-to-End 흐름을 시각화하고 성능 병목 현상을 식별할 수 있도록 합니다.
+-   **Grafana**: [http://localhost:3000](http://localhost:3000) (이곳에서 로그와 트레이스를 탐색합니다)
+-   **Prometheus**: [http://localhost:9090](http://localhost:9090)
+-   **Loki**: [http://localhost:3100](http://localhost:3100)
 
-### 3.1 개념 설명
+### **2단계: Spring Boot 서버 시작**
 
-*   **분산 트레이싱 (Distributed Tracing):** 여러 서비스에 걸쳐 있는 단일 요청의 전체 여정을 추적하여 각 서비스의 소요 시간을 파악하고 병목 현상을 식별하는 기술입니다.
-*   **OpenTelemetry (OTel):** 벤더에 구애받지 않는 오픈소스 관측 가능성(Observability) 프레임워크로, 트레이스, 메트릭, 로그와 같은 텔레메트리 데이터를 수집하는 표준화된 방법을 제공합니다.
-*   **스팬 (Span):** 트레이스의 기본 구성 요소로, 트레이스 내의 단일 작업(예: HTTP 요청, DB 쿼리)을 나타냅니다.
-*   **OTel Collector:** 텔레메트리 데이터를 수신, 처리 및 내보내는 프록시입니다. 애플리케이션과 관측 가능성 백엔드를 분리하는 데 사용됩니다.
-*   **Tempo:** Grafana Labs의 오픈소스, 대용량 분산 트레이싱 백엔드로, 트레이스를 저장하고 Grafana와 연동하여 시각화하는 데 사용됩니다.
+IDE에서 직접 실행하거나 Gradle Wrapper를 사용합니다.
 
-### 3.2 Docker Compose 설정 업데이트
+```bash
+# spring-boot-server 디렉터리에서 실행
+./gradlew bootRun
+```
 
-OpenTelemetry Collector와 Tempo를 Docker Compose 설정에 추가하여 트레이스를 수신하고 저장할 수 있는 백엔드를 구성했습니다.
+서버는 `http://localhost:8080`에서 시작됩니다.
 
-*   **위치:** `spring-boot-server/docker-compose.yml`
-*   **추가된 서비스:**
-    *   `otel-collector`: 애플리케이션으로부터 OTLP 트레이스를 수신하여 Tempo로 전달합니다.
-    *   `tempo`: 트레이스를 저장하는 고용량 분산 트레이싱 백엔드입니다.
-*   **구성 파일:**
-    *   `spring-boot-server/otel-collector-config.yaml`: OTel Collector의 수신기(OTLP gRPC/HTTP) 및 익스포터(로깅, Tempo)를 구성합니다.
-    *   `spring-boot-server/tempo-config.yaml`: Tempo의 로컬 저장소를 구성합니다.
+### **3단계: Flutter 앱 실행**
 
-### 3.3 Spring Boot 애플리케이션 계측 (Instrumentation)
+모바일 에뮬레이터 또는 웹 브라우저에서 앱을 실행합니다.
 
-Spring Boot 애플리케이션이 트레이스를 생성하고 OTel Collector로 전송하도록 설정했습니다.
+```bash
+# flutter_app 디렉터리로 이동
+cd flutter_app
 
-*   **의존성 추가:** `spring-boot-server/build.gradle`에 `spring-boot-starter-actuator`, `micrometer-tracing-bridge-otel`, `opentelemetry-exporter-otlp`, `spring-boot-starter-aop`를 추가했습니다.
-*   **`application.yaml` 설정:** `spring-boot-server/src/main/resources/application.yaml`에 트레이싱 샘플링, OTLP 엔드포인트(`http://localhost:4318/v1/traces`), 그리고 모든 Actuator 엔드포인트 노출 설정을 추가했습니다.
+# 의존성 설치
+flutter pub get
 
-### 3.4 `globalId` 자동 태깅 (Spring AOP)
+# 앱 실행 (플랫폼 선택)
+flutter run # 모바일(Android/iOS)용
+flutter run -d chrome # 웹용
+```
 
-모든 관련 요청에 대해 MDC의 `globalId`를 스팬 속성으로 자동으로 포함시키기 위해 Spring AOP를 활용했습니다.
+#### **⚠️ 중요: API 호스트 설정**
 
-*   **위치:** `spring-boot-server/src/main/java/com/example/demo/aspect/TracingAspect.java`
-*   **역할:** `@RestController`로 어노테이션된 메서드를 가로채어 MDC에서 `globalId`를 가져와 현재 OpenTelemetry 스팬에 태그(`globalId`)로 추가합니다. 이를 통해 각 컨트롤러 메서드에 수동으로 스팬 태깅을 할 필요가 없어집니다.
+`lib/main.dart` 파일의 API 호스트 주소는 실행하는 플랫폼에 따라 정확해야 합니다.
 
-### 3.5 검증
+-   **iOS 시뮬레이터 / Chrome (웹)**: `http://127.0.0.1:8080`
+-   **Android 에뮬레이터**: `http://10.0.2.2:8080` (`localhost`는 에뮬레이터 자신을 의미하므로 호스트 머신을 가리키는 이 주소를 사용해야 합니다.)
 
-1.  **Docker Compose 서비스 실행 확인:** `spring-boot-server` 디렉토리에서 `docker-compose down` 후 `docker-compose up -d`를 실행하여 최신 구성으로 컨테이너가 실행 중인지 확인합니다.
-2.  **Spring Boot 애플리케이션 재시작.**
-3.  **`X-Global-ID` 헤더를 포함하여 `/api/hello` 엔드포인트로 요청을 보냅니다.**
-4.  **`otel-collector` 로그 확인:** `docker-compose logs otel-collector`를 실행하여 수신 및 내보낸 트레이스 메시지를 확인하고, 트레이스 세부 정보 내에 `globalId`가 속성으로 포함되어 있는지 확인합니다.
-
-## 디버깅 이력
-
-이 프로젝트 진행 중 발생했던 디버깅 이력 및 해결 과정은 각 서브 프로젝트의 `README.md` 파일을 참조해주세요.
-
-*   **`flutter_app/README.md`:** Flutter macOS 앱의 네트워크 연결 문제 (앱 샌드박스) 관련.
-*   **`spring-boot-server/README.md`:** Spring Boot 서버의 MDC 로깅 설정 문제 (application.properties vs application.yaml, 명시적 필터 등록 충돌) 관련.
+현재 코드는 `127.0.0.1`로 설정되어 있습니다. 안드로이드 에뮬레이터에서 실행할 경우 이 주소를 직접 수정해야 합니다.

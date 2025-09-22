@@ -35,7 +35,7 @@ class _MyHomePageState extends State<MyHomePage> {
   String _response = 'Press the button to call the API.';
   final Uuid _uuid = const Uuid(); // Initialize Uuid
 
-  Future<void> _callApi() async {
+  Future<void> _callApi_hello() async {
     setState(() {
       _response = 'Calling API...';
     });
@@ -48,6 +48,38 @@ class _MyHomePageState extends State<MyHomePage> {
       // If you are running on a physical device, replace localhost with your computer's IP address.
       final response = await http.get(
         Uri.parse('http://127.0.0.1:8080/api/hello'),
+        headers: {
+          'X-Global-ID': globalId, // Add globalId to header
+        },
+      );
+
+      if (response.statusCode == 200) {
+        setState(() {
+          _response = 'Response: ${response.body}\nGlobal ID: $globalId';
+        });
+      } else {
+        setState(() {
+          _response = 'Error: ${response.statusCode}\nGlobal ID: $globalId';
+        });
+      }
+    } catch (e) {
+      setState(() {
+        _response = 'Error: $e\nGlobal ID: $globalId';
+      });
+    }
+  }
+
+  Future<void> _callApi_hello_second() async {
+    setState(() {
+      _response = 'Calling API...';
+    });
+    final String globalId = _uuid.v4(); // Generate globalId
+    try {
+      // For Android emulators, use 10.0.2.2 to refer to the host machine's localhost.
+      // For iOS simulators, you can use localhost or 127.0.0.1.
+      // If you are running on a physical device, replace localhost with your computer's IP address.
+      final response = await http.get(
+        Uri.parse('http://127.0.0.1:8080/api/hello2'),
         headers: {
           'X-Global-ID': globalId, // Add globalId to header
         },
@@ -86,10 +118,21 @@ class _MyHomePageState extends State<MyHomePage> {
           ],
         ),
       ),
-      floatingActionButton: FloatingActionButton(
-        onPressed: _callApi,
-        tooltip: 'Call API',
-        child: const Icon(Icons.api),
+      floatingActionButton: Row(
+        mainAxisAlignment: MainAxisAlignment.end,
+        children: [
+          FloatingActionButton(
+            onPressed: _callApi_hello,
+            tooltip: 'Call API hello',
+            child: const Icon(Icons.api),
+          ),
+          const SizedBox(width: 16),
+          FloatingActionButton(
+            onPressed: _callApi_hello_second,
+            tooltip: 'Call API hello second',
+            child: const Icon(Icons.api),
+          ),
+        ],
       ),
     );
   }
