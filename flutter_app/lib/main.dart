@@ -3,6 +3,8 @@ import 'package:http/http.dart' as http;
 import 'package:uuid/uuid.dart'; // Import uuid package
 import 'dart:convert';
 
+import 'package:flutter_app/services/logging_service.dart';
+
 void main() {
   runApp(const MyApp());
 }
@@ -34,6 +36,7 @@ class MyHomePage extends StatefulWidget {
 class _MyHomePageState extends State<MyHomePage> {
   String _response = 'Press the button to call the API.';
   final Uuid _uuid = const Uuid(); // Initialize Uuid
+  final LoggingService _loggingService = LoggingService();
 
   Future<void> _callApi_hello() async {
     setState(() {
@@ -101,6 +104,29 @@ class _MyHomePageState extends State<MyHomePage> {
     }
   }
 
+  Future<void> _sendSampleEvent() async {
+    setState(() {
+      _response = 'Sending event...';
+    });
+
+    final eventData = {
+      'eventId': _uuid.v4(),
+      'timestamp': DateTime.now().toIso8601String(),
+      'userId': 'user-123',
+      'event': 'button_click',
+      'properties': {
+        'button_id': 'send_event_button',
+        'page': 'home',
+      }
+    };
+
+    await _loggingService.sendEvent(eventData);
+
+    setState(() {
+      _response = 'Event sent! Check the console for details.';
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -124,13 +150,22 @@ class _MyHomePageState extends State<MyHomePage> {
           FloatingActionButton(
             onPressed: _callApi_hello,
             tooltip: 'Call API hello',
+            heroTag: 'hello',
             child: const Icon(Icons.api),
           ),
           const SizedBox(width: 16),
           FloatingActionButton(
             onPressed: _callApi_hello_second,
             tooltip: 'Call API hello second',
+            heroTag: 'hello2',
             child: const Icon(Icons.api),
+          ),
+          const SizedBox(width: 16),
+          FloatingActionButton(
+            onPressed: _sendSampleEvent,
+            tooltip: 'Send Log Event',
+            heroTag: 'send_event',
+            child: const Icon(Icons.event),
           ),
         ],
       ),
