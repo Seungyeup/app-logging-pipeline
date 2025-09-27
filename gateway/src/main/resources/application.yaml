@@ -4,3 +4,32 @@ server:
 spring:
   application:
     name: gateway
+  kafka:
+    bootstrap-servers: localhost:9092,localhost:9093,localhost:9094
+    producer:
+      key-serializer: org.apache.kafka.common.serialization.StringSerializer
+      value-serializer: org.apache.kafka.common.serialization.StringSerializer
+  cloud:
+    gateway:
+      server:
+        webflux:
+          routes:
+            - id: spring-boot-server-api
+              uri: http://localhost:8080
+              predicates:
+                - Path=/api/**
+
+management:
+  tracing:
+    sampling:
+      probability: 1.0
+    instrumentation:
+      http-server:
+        enabled: false
+  otlp:
+    tracing:
+      endpoint: http://localhost:4318/v1/traces
+  endpoints:
+    web:
+      exposure:
+        include: "*"

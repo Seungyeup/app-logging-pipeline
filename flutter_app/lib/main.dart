@@ -50,7 +50,7 @@ class _MyHomePageState extends State<MyHomePage> {
       // For iOS simulators, you can use localhost or 127.0.0.1.
       // If you are running on a physical device, replace localhost with your computer's IP address.
       final response = await http.get(
-        Uri.parse('http://127.0.0.1:8080/api/hello'),
+        Uri.parse('http://127.0.0.1:8081/api/hello'),
         headers: {
           'X-Global-ID': globalId, // Add globalId to header
         },
@@ -82,7 +82,7 @@ class _MyHomePageState extends State<MyHomePage> {
       // For iOS simulators, you can use localhost or 127.0.0.1.
       // If you are running on a physical device, replace localhost with your computer's IP address.
       final response = await http.get(
-        Uri.parse('http://127.0.0.1:8080/api/hello2'),
+        Uri.parse('http://127.0.0.1:8081/api/hello2'),
         headers: {
           'X-Global-ID': globalId, // Add globalId to header
         },
@@ -123,7 +123,7 @@ class _MyHomePageState extends State<MyHomePage> {
     await _loggingService.sendEvent(eventData);
 
     setState(() {
-      _response = 'Event sent! Check the console for details.';
+      _response = 'Event sent! Check the console for details. \n' + eventData.toString();
     });
   }
 
