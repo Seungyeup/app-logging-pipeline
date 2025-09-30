@@ -30,8 +30,13 @@ dependencies {
     implementation 'io.micrometer:micrometer-tracing-bridge-otel'
     implementation 'io.opentelemetry:opentelemetry-exporter-otlp'
 
-    // AOP starter for @NewSpan annotation support -> NewSpan 더이상 사용안함
-    implementation 'org.springframework.boot:spring-boot-starter-aop'
+    // Add OpenTelemetry SDK for W3CPropagator and other SDK components
+    implementation 'io.opentelemetry:opentelemetry-sdk'
+
+    // Add JSR 305 annotations for @Nonnull
+    compileOnly 'com.google.code.findbugs:jsr305:3.0.2'
+
+
 
     // JDBC 관측
     implementation "net.ttddyy.observation:datasource-micrometer-spring-boot:1.1.2"

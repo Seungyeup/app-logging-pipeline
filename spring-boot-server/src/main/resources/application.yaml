@@ -22,8 +22,8 @@ logging:
     name: logs/app.log
   pattern:
     # Include traceId/spanId/globalId in both console and file logs
-    console: "%d{yyyy-MM-dd HH:mm:ss.SSS} [%thread] [trace_id=%X{traceId} span_id=%X{spanId} globalId=%X{globalId}] %-5level %logger{36} - %msg%n"
-    file: "%d{yyyy-MM-dd HH:mm:ss.SSS} [%thread] [trace_id=%X{traceId} span_id=%X{spanId} globalId=%X{globalId}] %-5level %logger{36} - %msg%n"
+    console: "%d{yyyy-MM-dd HH:mm:ss.SSS} [%thread] [trace_id=%X{traceId} span_id=%X{spanId}] %-5level %logger{36} - %msg%n"
+    file: "%d{yyyy-MM-dd HH:mm:ss.SSS} [%thread] [trace_id=%X{traceId} span_id=%X{spanId}] %-5level %logger{36} - %msg%n"
   level:
     root: INFO
     com.example.demo: DEBUG
@@ -39,13 +39,7 @@ management:
   tracing:
     sampling:
       probability: 1.0
-    baggage:
-      correlation:
-        enabled: true
-        fields: globalId # The MDC key
-      remote-fields: globalId
-      local-fields: globalId
-      tag-fields: globalId
+
   otlp:
     tracing:
       endpoint: http://localhost:4318/v1/traces

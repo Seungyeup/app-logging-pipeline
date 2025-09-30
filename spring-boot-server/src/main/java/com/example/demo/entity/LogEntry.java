@@ -12,7 +12,7 @@ public class LogEntry {
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
-    private String globalId;
+    private String traceId;
     private String message;
     private LocalDateTime timestamp;
     private String level;
@@ -21,8 +21,8 @@ public class LogEntry {
     public LogEntry() {
     }
 
-    public LogEntry(String globalId, String message, LocalDateTime timestamp, String level) {
-        this.globalId = globalId;
+    public LogEntry(String traceId, String message, LocalDateTime timestamp, String level) {
+        this.traceId = traceId;
         this.message = message;
         this.timestamp = timestamp;
         this.level = level;
@@ -37,12 +37,12 @@ public class LogEntry {
         this.id = id;
     }
 
-    public String getGlobalId() {
-        return globalId;
+    public String getTraceId() {
+        return traceId;
     }
 
-    public void setGlobalId(String globalId) {
-        this.globalId = globalId;
+    public void setTraceId(String traceId) {
+        this.traceId = traceId;
     }
 
     public String getMessage() {

@@ -43,19 +43,21 @@ class _MyHomePageState extends State<MyHomePage> {
       _response = 'Calling API...';
     });
 
-    final String globalId = _uuid.v4(); // Generate globalId
+    // Generate a UUID and remove hyphens to conform to the W3C Trace ID format (32-character hex string).
+    final String globalId = _uuid.v4().replaceAll('-', ''); // Generate globalId
 
     try {
+      print('Global ID: $globalId');
       // For Android emulators, use 10.0.2.2 to refer to the host machine's localhost.
       // For iOS simulators, you can use localhost or 127.0.0.1.
       // If you are running on a physical device, replace localhost with your computer's IP address.
       final response = await http.get(
         Uri.parse('http://127.0.0.1:8081/api/hello'),
         headers: {
-          'X-Global-ID': globalId, // Add globalId to header
+          'X-Trace-Id': globalId, // Add traceId to header
         },
       );
-
+      print('Response: ${response.body}');
       if (response.statusCode == 200) {
         setState(() {
           _response = 'Response: ${response.body}\nGlobal ID: $globalId';
@@ -76,7 +78,8 @@ class _MyHomePageState extends State<MyHomePage> {
     setState(() {
       _response = 'Calling API...';
     });
-    final String globalId = _uuid.v4(); // Generate globalId
+    // Generate a UUID and remove hyphens to conform to the W3C Trace ID format (32-character hex string).
+    final String globalId = _uuid.v4().replaceAll('-', ''); // Generate globalId
     try {
       // For Android emulators, use 10.0.2.2 to refer to the host machine's localhost.
       // For iOS simulators, you can use localhost or 127.0.0.1.
@@ -84,7 +87,7 @@ class _MyHomePageState extends State<MyHomePage> {
       final response = await http.get(
         Uri.parse('http://127.0.0.1:8081/api/hello2'),
         headers: {
-          'X-Global-ID': globalId, // Add globalId to header
+          'X-Trace-Id': globalId, // Add traceId to header
         },
       );
 
